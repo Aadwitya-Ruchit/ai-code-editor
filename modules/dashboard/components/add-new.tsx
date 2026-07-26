@@ -47,7 +47,10 @@ const AddNewButton = () => {
         </div>
       </div>
       
-    //   Todo Implement Template Selecting Model here
+    <TemplateSelectingModal
+    isOpen = {isModelOpen}
+    onClose = {()=> setIsModelOpen(false)}
+    onSubmit = {()=>()}
     </>
   )
 }
