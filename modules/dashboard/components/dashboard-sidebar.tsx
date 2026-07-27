@@ -113,10 +113,10 @@ export function DashboardSidebar({ initialPlaygroundData }: { initialPlaygroundD
                     <SidebarMenuItem key={playground.id}>
                       <SidebarMenuButton
                         asChild
-                        isActive={pathname === `/pathname/${playground.id}`}
+                        isActive={pathname === `/playground/${playground.id}`}
                         tooltip={playground.name}
                       >
-                        <Link href={`/pathname/${playground.id}`}>
+                        <Link href={`/playground/${playground.id}`}>
                           {IconComponent && <IconComponent className="h-4 w-4" />}
                           <span>{playground.name}</span>
                         </Link>
@@ -146,10 +146,10 @@ export function DashboardSidebar({ initialPlaygroundData }: { initialPlaygroundD
                     <SidebarMenuItem key={playground.id}>
                       <SidebarMenuButton
                         asChild
-                        isActive={pathname === `/pathname/${playground.id}`}
+                        isActive={pathname === `/playground/${playground.id}`}
                         tooltip={playground.name}
                       >
-                        <Link href={`/pathname/${playground.id}`}>
+                        <Link href={`/playground/${playground.id}`}>
                           {IconComponent && <IconComponent className="h-4 w-4" />}
                           <span>{playground.name}</span>
                         </Link>

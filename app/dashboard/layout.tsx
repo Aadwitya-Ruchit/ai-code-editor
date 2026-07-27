@@ -22,7 +22,7 @@ export default async function DashboardLayout({
     name:item.title,
     starred:item.Starmark?.[0]?.isMarked || false,
     icon:technologyIconMap[item.template] || "Code2"
-  }))
+  })) || []
     return (
         <SidebarProvider>
           <div className="flex min-h-screen w-full overflow-x-hidden">
