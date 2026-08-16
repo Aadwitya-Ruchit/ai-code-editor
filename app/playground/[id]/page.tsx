@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
@@ -41,6 +42,16 @@ import {
   Settings,
   X,
 } from "lucide-react";
+import WebContainerPreview from "@/modules/webcontainers/components/webcontainers-preview";
+
+const {
+    serverUrl,
+    isLoading:containerLoading,
+    error:containerError,
+    instance,
+    writeFileSync
+                // @ts-ignore
+  } = useWebContainer({templateData})
 
 const MainPlaygroundPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -290,6 +301,24 @@ const MainPlaygroundPage = () => {
                       onContentChange={() => {}}
                     />
                   </ResizablePanel>
+                  {
+                      isPreviewVisible && (
+                        <>
+                        <ResizableHandle  />
+                        <ResizablePanel defaultSize={50}>
+                            <WebContainerPreview
+                            templateData={templateData}
+                            instance={instance}
+                            writeFileSync={writeFileSync}
+                            isLoading={containerLoading}
+                            error={containerError}
+                            serverUrl={serverUrl!}
+                            forceResetup={false}
+                          />
+                        </ResizablePanel>
+                        </>
+                      )
+                    }
                 </ResizablePanelGroup>
               </div>
             </div>
