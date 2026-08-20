@@ -12,7 +12,7 @@ interface UseWebContaierReturn {
   error: string | null;
   instance: WebContainer | null;
   writeFileSync: (path: string, content: string) => Promise<void>;
-  destory: () => void;
+  destroy: () => void;
 }
 
 export const useWebContainer = ({
@@ -82,7 +82,7 @@ export const useWebContainer = ({
     [instance]
   );
 
-  const destory = useCallback(()=>{
+  const destroy = useCallback(()=>{
     if(instance){
         instance.teardown()
         setInstance(null);
@@ -90,5 +90,5 @@ export const useWebContainer = ({
     }
   },[instance])
 
-  return {serverUrl , isLoading , error , instance , writeFileSync , destory}
+  return {serverUrl , isLoading , error , instance , writeFileSync , destroy: destroy}
 };
