@@ -31,8 +31,8 @@ import {
   TemplateFile,
   TemplateFolder,
 } from "@/modules/playground/lib/path-to-json";
-import WebContainerPreview from "@/modules/webcontainers/components/webcontainer-preview";
-import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainer";
+import WebContainerPreview from "@/modules/webcontainers/components/webcontainers-preview";
+import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainers";
 import {
   AlertCircle,
   Bot,
@@ -224,8 +224,8 @@ const MainPlaygroundPage = () => {
           }
         }
 
-           const newTemplateData = await saveTemplateData(updatedTemplateData);
-        setTemplateData(newTemplateData || updatedTemplateData);
+           await saveTemplateData(updatedTemplateData);
+        setTemplateData(updatedTemplateData);
 // Update open files
         const updatedOpenFiles = openFiles.map((f) =>
           f.id === targetFileId
@@ -378,7 +378,7 @@ const MainPlaygroundPage = () => {
 
               <div className="flex items-center gap-1">
                 <Tooltip>
-                  <TooltipTrigger>
+                  <TooltipTrigger asChild>
                     <Button
                       size="sm"
                       variant="outline"
@@ -484,7 +484,7 @@ const MainPlaygroundPage = () => {
                 </div>
                 <div className="flex-1">
                   <ResizablePanelGroup
-                    direction="horizontal"
+                    orientation="horizontal"
                     className="h-full"
                   >
                     <ResizablePanel defaultSize={isPreviewVisible ? 50 : 100}>
