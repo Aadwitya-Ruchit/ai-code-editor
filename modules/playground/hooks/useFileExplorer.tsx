@@ -7,6 +7,7 @@ import { generateFileId } from "../lib";
 
 interface OpenFile extends TemplateFile {
   id: string;
+  originalObject: TemplateFile;
   hasUnsavedChanges: boolean;
   content: string;
   originalContent: string;
@@ -103,6 +104,7 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
     const newOpenFile: OpenFile = {
       ...file,
       id: fileId,
+      originalObject: file,
       hasUnsavedChanges: false,
       content: file.content || "",
       originalContent: file.content || "",
@@ -338,10 +340,8 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
     const { templateData, openFiles, activeFileId } = get();
     if (!templateData) return;
 
-    // Generate old and new file IDs using the same logic as openFile
+    // Generate old file ID using the same logic as openFile
     const oldFileId = generateFileId(file, templateData);
-    const newFile = { ...file, filename: newFilename, fileExtension: newExtension };
-    const newFileId = generateFileId(newFile, templateData);
 
     try {
       const updatedTemplateData = JSON.parse(
@@ -374,6 +374,8 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
         } as TemplateFile;
         currentFolder.items[fileIndex] = updatedFile;
 
+        const newFileId = generateFileId(updatedFile, updatedTemplateData);
+
         // Update open files with new ID and names
         const updatedOpenFiles = openFiles.map((f) =>
           f.id === oldFileId
@@ -382,6 +384,7 @@ export const useFileExplorer = create<FileExplorerState>((set, get) => ({
                 id: newFileId,
                 filename: newFilename,
                 fileExtension: newExtension,
+                originalObject: updatedFile,
               }
             : f
         );

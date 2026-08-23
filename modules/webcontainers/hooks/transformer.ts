@@ -22,14 +22,16 @@ type WebContainerFileSystem = Record<string, WebContainerFile | WebContainerDire
 
 export function transformToWebContainerFormat(template: { folderName: string; items: TemplateItem[] }): WebContainerFileSystem {
   function processItem(item: TemplateItem): WebContainerFile | WebContainerDirectory {
-    if (item.folderName && item.items) {
+    if ("folderName" in item && item.folderName && item.items) {
       // This is a directory
       const directoryContents: WebContainerFileSystem = {};
       
       item.items.forEach(subItem => {
-        const key = subItem.fileExtension 
+        const key = ("folderName" in subItem && subItem.folderName)
+          ? subItem.folderName
+          : subItem.fileExtension
           ? `${subItem.filename}.${subItem.fileExtension}`
-          : subItem.folderName!;
+          : subItem.filename;
         directoryContents[key] = processItem(subItem);
       });
 
@@ -49,11 +51,13 @@ export function transformToWebContainerFormat(template: { folderName: string; it
   const result: WebContainerFileSystem = {};
   
   template.items.forEach(item => {
-    const key = item.fileExtension 
+    const key = ("folderName" in item && item.folderName)
+      ? item.folderName
+      : item.fileExtension 
       ? `${item.filename}.${item.fileExtension}`
-      : item.folderName!;
+      : item.filename;
     result[key] = processItem(item);
   });
 
   return result;
-}1
+}

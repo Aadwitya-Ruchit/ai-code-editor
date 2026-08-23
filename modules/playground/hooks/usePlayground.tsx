@@ -43,9 +43,9 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
       setPlaygroundData(data);
       const rawContent = data?.templateFiles?.[0]?.content;
 
-      if (typeof rawContent === "string") {
-        const parsedContent = JSON.parse(rawContent);
-        setTemplateData(parsedContent);
+      if (rawContent) {
+        const parsedContent = typeof rawContent === "string" ? JSON.parse(rawContent) : rawContent;
+        setTemplateData(parsedContent as any);
         toast.success("playground loaded successfully");
         return;
       }
