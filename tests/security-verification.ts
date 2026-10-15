@@ -80,13 +80,13 @@ async function runSecurityTests() {
     if (typeof nextConfig.headers === "function") {
       const headersConfig = await nextConfig.headers();
       const allRoutesConfig = headersConfig.find(
-        (h: any) => h.source === "/:path*" || h.source === "/(.*)"
+        (h) => h.source === "/:path*" || h.source === "/(.*)"
       );
       assert(!!allRoutesConfig, "Global security header rule exists for all routes ('/:path*')");
 
       if (allRoutesConfig) {
         const headerMap = new Map(
-          allRoutesConfig.headers.map((h: any) => [h.key.toLowerCase(), h.value])
+          allRoutesConfig.headers.map((h: { key: string; value: string }) => [h.key.toLowerCase(), h.value])
         );
 
         // WebContainer required headers
@@ -117,7 +117,7 @@ async function runSecurityTests() {
           "Permissions-Policy is configured"
         );
         assert(
-          headerMap.get("strict-transport-security")?.includes("max-age=63072000"),
+          Boolean(headerMap.get("strict-transport-security")?.includes("max-age=63072000")),
           "Strict-Transport-Security (HSTS) is enabled with preload"
         );
         assert(

@@ -67,6 +67,7 @@ const AddNewButton = () => {
             alt="Create new playground"
             width={150}
             height={150}
+            style={{ width: "auto", height: "auto" }}
             className="transition-transform duration-300 group-hover:scale-110"
           />
         </div>

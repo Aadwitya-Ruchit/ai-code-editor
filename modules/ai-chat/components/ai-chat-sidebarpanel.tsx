@@ -619,7 +619,13 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
                   </Button>
 
                   <div className="relative w-9 h-9 border border-zinc-700/80 rounded-full flex justify-center items-center bg-zinc-800/50 shrink-0">
-                    <Image src="/logo.svg" alt="Logo" width={22} height={22} />
+                    <Image
+                      src="/logo.svg"
+                      alt="Logo"
+                      width={22}
+                      height={22}
+                      style={{ width: "auto", height: "auto" }}
+                    />
                   </div>
 
                   <div className="min-w-0">

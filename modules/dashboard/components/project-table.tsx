@@ -181,6 +181,7 @@ export default function ProjectTable({
                         alt={project.user.name || "User"}
                         width={32}
                         height={32}
+                        style={{ width: "auto", height: "auto" }}
                         className="object-cover"
                       />
                     </div>

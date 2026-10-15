@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { redirect } from "next/navigation";
 
 export default async function PlaygroundLayout({
@@ -11,5 +12,5 @@ export default async function PlaygroundLayout({
     redirect("/auth/sign-in");
   }
 
-  return <>{children}</>;
+  return <SidebarProvider>{children}</SidebarProvider>;
 }

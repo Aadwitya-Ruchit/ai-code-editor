@@ -38,6 +38,7 @@ export function Header() {
                       alt="Logo"
                       height={60}
                       width={60}
+                      style={{ width: "auto", height: "auto" }}
                     />
 
                     <span className="hidden sm:block font-extrabold text-lg">
