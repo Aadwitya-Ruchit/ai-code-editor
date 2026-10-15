@@ -1,5 +1,6 @@
+import { auth } from "@/auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { type NextRequest, NextResponse } from "next/server";
-
 
 interface CodeSuggestionRequest {
   fileContent: string;
@@ -24,24 +25,67 @@ interface CodeContext {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: CodeSuggestionRequest = await request.json();
+    // 1. Enforce authentication
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Unauthorized. Please sign in to use code completion." },
+        { status: 401 }
+      );
+    }
+
+    // 2. Enforce rate limiting: 45 requests per 60 seconds per user
+    const rateLimit = await checkRateLimit({
+      key: `completion:${session.user.id}`,
+      limit: 45,
+      windowSeconds: 60,
+    });
+
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { error: "Too many completion requests. Please slow down." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateLimit.reset),
+          },
+        }
+      );
+    }
+
+    const body: CodeSuggestionRequest = await request.json().catch(() => ({}));
 
     const { fileContent, cursorLine, cursorColumn, suggestionType, fileName } =
       body;
 
-    // Validate input
-    if (!fileContent || cursorLine < 0 || cursorColumn < 0 || !suggestionType) {
+    // Validate input parameters & bounds
+    if (
+      typeof fileContent !== "string" ||
+      fileContent.length === 0 ||
+      fileContent.length > 60000 ||
+      typeof cursorLine !== "number" ||
+      cursorLine < 0 ||
+      cursorLine > 20000 ||
+      typeof cursorColumn !== "number" ||
+      cursorColumn < 0 ||
+      cursorColumn > 2000 ||
+      typeof suggestionType !== "string" ||
+      suggestionType.length > 50
+    ) {
       return NextResponse.json(
-        { error: "Invalid input parameters" },
+        { error: "Invalid or oversized input parameters for code completion." },
         { status: 400 }
       );
     }
+
+    const sanitizedFileName =
+      typeof fileName === "string" ? fileName.slice(0, 100) : undefined;
 
     const context = analyzeCodeContext(
       fileContent,
       cursorLine,
       cursorColumn,
-      fileName
+      sanitizedFileName
     );
 
     const prompt = buildPrompt(context, suggestionType);
@@ -59,9 +103,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("Context analysis error:", error);
+    console.error("Code completion API error:", error?.message || error);
     return NextResponse.json(
-      { error: "Internal server error", message: error.message },
+      { error: "Failed to generate code completion" },
       { status: 500 }
     );
   }
@@ -164,6 +208,7 @@ async function generateSuggestion(prompt: string): Promise<string> {
           max_tokens: 300,
           stream: false,
         }),
+        signal: AbortSignal.timeout(15000),
       }
     );
 
