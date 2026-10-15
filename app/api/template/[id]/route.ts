@@ -1,70 +1,58 @@
-import {
-  readTemplateStructureFromJson,
-  saveTemplateStructureToJson,
-} from "@/modules/playground/lib/path-to-json";
+import { auth } from "@/auth";
+import { scanTemplateDirectory } from "@/modules/playground/lib/path-to-json";
 import { db } from "@/lib/db";
 import { templatePaths } from "@/lib/template";
 import path from "path";
-import fs from "fs/promises";
 import { NextRequest } from "next/server";
 
-function validateJsonStructure(data: unknown): boolean {
-  try {
-    JSON.parse(JSON.stringify(data)); // Ensures it's serializable
-    return true;
-  } catch (error) {
-    console.error("Invalid JSON structure:", error);
-    return false;
-  }
-}
-
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-
-const {id} = await params;
-
-if(!id){
-      return Response.json({ error: "Missing playground ID" }, { status: 400 });
-}
-
-const playground = await db.playground.findUnique({
-    where:{id}
-})
-
-  if (!playground) {
-    return Response.json({ error: "Playground not found" }, { status: 404 });
-  }
-  
-  const templateKey = playground.template as keyof typeof templatePaths;
-  const templatePath = templatePaths[templateKey]
-
-    if (!templatePath) {
-    return Response.json({ error: "Invalid template" }, { status: 404 });
-  }
-
   try {
-    const inputPath = path.join(process.cwd() , templatePath);
-    const outputFile = path.join(process.cwd() , `output/${templateKey}.json`);
-
-    await saveTemplateStructureToJson(inputPath , outputFile);
-    const result = await readTemplateStructureFromJson(outputFile);
-
-
-    // Validate the JSON structure before saving
-    if (!validateJsonStructure(result.items)) {
-      return Response.json({ error: "Invalid JSON structure" }, { status: 500 });
+    const session = await auth();
+    if (!session?.user?.id) {
+      return Response.json(
+        { error: "Unauthorized. Please sign in to access playground templates." },
+        { status: 401 }
+      );
     }
 
-    await fs.unlink(outputFile)
+    const { id } = await params;
+    if (!id || typeof id !== "string") {
+      return Response.json({ error: "Missing or invalid playground ID" }, { status: 400 });
+    }
 
+    // Verify playground existence and ownership
+    const playground = await db.playground.findFirst({
+      where: {
+        id,
+        userId: session.user.id,
+      },
+    });
 
-      return Response.json({ success: true, templateJson: result }, { status: 200 });
+    if (!playground) {
+      return Response.json(
+        { error: "Playground not found or access denied" },
+        { status: 404 }
+      );
+    }
+
+    const templateKey = playground.template as keyof typeof templatePaths;
+    const templatePath = templatePaths[templateKey];
+
+    if (!templatePath) {
+      return Response.json({ error: "Invalid template configured" }, { status: 400 });
+    }
+
+    const inputPath = path.join(/*turbopackIgnore: true*/ process.cwd(), templatePath);
+
+    // Scan directory directly in-memory (concurrency safe, no race condition on temporary files)
+    const result = await scanTemplateDirectory(inputPath);
+
+    return Response.json({ success: true, templateJson: result }, { status: 200 });
   } catch (error) {
-      console.error("Error generating template JSON:", error);
-    return Response.json({ error: "Failed to generate template" }, { status: 500 });
+    console.error("Error generating template structure:", error);
+    return Response.json({ error: "Failed to generate template structure" }, { status: 500 });
   }
-
-
 }

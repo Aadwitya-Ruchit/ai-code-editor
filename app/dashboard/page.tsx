@@ -4,10 +4,18 @@ import AddNewButton from "@/modules/dashboard/components/add-new";
 import AddRepo from "@/modules/dashboard/components/add-repo";
 import EmptyState from "@/modules/dashboard/components/empty-state";
 import ProjectTable from "@/modules/dashboard/components/project-table";
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 import React from "react";
 
 const Page = async () => {
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/auth/sign-in");
+  }
+
   const playgrounds = await getAllPlaygroundForUser();
+
   console.log("Playgrounds:", playgrounds);
   return (
     <div className="flex flex-col justify-start items-center min-h-screen mx-auto max-w-7xl px-4 py-10">

@@ -1,14 +1,15 @@
-import { SidebarProvider } from "@/components/ui/sidebar";
-import React from "react";
+import { auth } from "@/auth";
+import { redirect } from "next/navigation";
 
-export default function PlaygroundLayout({
+export default async function PlaygroundLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <SidebarProvider>
-      {children}
-    </SidebarProvider>
-  );
+  const session = await auth();
+  if (!session?.user?.id) {
+    redirect("/auth/sign-in");
+  }
+
+  return <>{children}</>;
 }
