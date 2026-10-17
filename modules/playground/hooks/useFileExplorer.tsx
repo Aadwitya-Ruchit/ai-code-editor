@@ -15,13 +15,19 @@ interface OpenFile extends TemplateFile {
 
 interface FileExplorerState {
   playgroundId: string;
+  playgroundTitle: string | null;
+  playgroundTemplate: string | null;
   templateData: TemplateFolder | null;
   openFiles: OpenFile[];
   activeFileId: string | null;
   editorContent: string;
+  selectedCode: string | null;
+  selectedRange: { startLine: number; endLine: number } | null;
 
   //   Setter Functions
   setPlaygroundId: (id: string) => void;
+  setPlaygroundMetadata: (metadata: { id?: string; title?: string; template?: string }) => void;
+  setSelectedCode: (code: string | null, range?: { startLine: number; endLine: number } | null) => void;
   setTemplateData: (data: TemplateFolder | null) => void;
   setEditorContent: (content: string) => void;
   setOpenFiles: (files: OpenFile[]) => void;
@@ -79,17 +85,31 @@ interface FileExplorerState {
 export const useFileExplorer = create<FileExplorerState>((set, get) => ({
   templateData: null,
   playgroundId: "",
+  playgroundTitle: null,
+  playgroundTemplate: null,
   openFiles: [] satisfies OpenFile[],
   activeFileId: null,
   editorContent: "",
+  selectedCode: null,
+  selectedRange: null,
 
   setTemplateData: (data) => set({ templateData: data }),
   setPlaygroundId(id) {
     set({ playgroundId: id });
   },
+  setPlaygroundMetadata({ id, title, template }) {
+    set((state) => ({
+      playgroundId: id !== undefined ? id : state.playgroundId,
+      playgroundTitle: title !== undefined ? title : state.playgroundTitle,
+      playgroundTemplate: template !== undefined ? template : state.playgroundTemplate,
+    }));
+  },
+  setSelectedCode: (code, range = null) => {
+    set({ selectedCode: code, selectedRange: range });
+  },
   setEditorContent: (content) => set({ editorContent: content }),
   setOpenFiles: (files) => set({ openFiles: files }),
-  setActiveFileId: (fileId) => set({ activeFileId: fileId }),
+  setActiveFileId: (fileId) => set({ activeFileId: fileId, selectedCode: null, selectedRange: null }),
 
   openFile: (file) => {
     const fileId = generateFileId(file, get().templateData!);
