@@ -1,15 +1,74 @@
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { generateChatResponse, ChatMessagePayload } from "@/lib/ai/provider";
+import { JUNIOR_SYSTEM_PROMPT } from "@/lib/ai/prompt";
 import { NextRequest, NextResponse } from "next/server";
 
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+
+export interface ActiveFileContext {
+  filename: string;
+  fileExtension: string;
+  path?: string;
+  content?: string;
+  selectedCode?: string;
+  selectedRange?: { startLine: number; endLine: number };
+}
+
+export interface PlaygroundContext {
+  playgroundId?: string;
+  playgroundTitle?: string;
+  template?: string;
+  fileTree?: string[];
+  activeFile?: ActiveFileContext;
+}
 
 interface ChatRequestBody {
   conversationId?: string;
   message: string;
   history?: Array<{ role: string; content: string }>;
   mode?: "chat" | "review" | "fix" | "optimize";
+  playgroundContext?: PlaygroundContext;
+}
+
+export function formatPlaygroundContext(ctx: PlaygroundContext): string {
+  const parts: string[] = ["<playground_context>"];
+
+  if (ctx.playgroundTitle || ctx.template) {
+    parts.push(`Current Project: "${ctx.playgroundTitle || "Playground"}" (${ctx.template || "Standard"} environment)`);
+  }
+
+  if (Array.isArray(ctx.fileTree) && ctx.fileTree.length > 0) {
+    const truncatedTree = ctx.fileTree.slice(0, 100);
+    parts.push(`\nProject File Structure (${ctx.fileTree.length} total files):`);
+    parts.push(truncatedTree.map((p) => `- ${p}`).join("\n"));
+    if (ctx.fileTree.length > 100) {
+      parts.push(`... and ${ctx.fileTree.length - 100} more files`);
+    }
+  }
+
+  if (ctx.activeFile) {
+    const { filename, fileExtension, path, content, selectedCode, selectedRange } = ctx.activeFile;
+    const fileLabel = path || (fileExtension ? `${filename}.${fileExtension}` : filename);
+
+    if (selectedCode && selectedCode.trim()) {
+      const lineInfo = selectedRange ? ` (Lines ${selectedRange.startLine}-${selectedRange.endLine})` : "";
+      const safeSnippet = selectedCode.length > 20000 ? selectedCode.slice(0, 20000) + "\n...[truncated]" : selectedCode;
+      parts.push(`\nActive File in Editor: ${fileLabel}`);
+      parts.push(`User Selected Code Snippet${lineInfo}:`);
+      parts.push(`\`\`\`${fileExtension || ""}\n${safeSnippet}\n\`\`\``);
+    } else if (content && content.trim()) {
+      const safeContent = content.length > 35000 ? content.slice(0, 35000) + "\n...[truncated]" : content;
+      parts.push(`\nActive File in Editor: ${fileLabel}`);
+      parts.push(`Full File Content:`);
+      parts.push(`\`\`\`${fileExtension || ""}\n${safeContent}\n\`\`\``);
+    } else {
+      parts.push(`\nActive File in Editor: ${fileLabel} (empty file)`);
+    }
+  }
+
+  parts.push("</playground_context>");
+  return parts.join("\n");
 }
 
 /**
@@ -74,7 +133,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { message, conversationId } = body;
+    const { message, conversationId, playgroundContext } = body;
 
     if (!message || typeof message !== "string" || !message.trim()) {
       return NextResponse.json(
@@ -113,7 +172,11 @@ export async function POST(req: NextRequest) {
     } else {
       // Create new conversation
       isNewConversation = true;
-      const title = generateSensibleTitle(trimmedMessage);
+      const rawTitle = generateSensibleTitle(trimmedMessage);
+      const title = playgroundContext?.playgroundTitle
+        ? `[${playgroundContext.playgroundTitle.slice(0, 20)}] ${rawTitle}`.slice(0, 60)
+        : rawTitle;
+
       conversation = await db.conversation.create({
         data: {
           userId,
@@ -150,9 +213,15 @@ export async function POST(req: NextRequest) {
       { role: "user", content: trimmedMessage },
     ];
 
+    // Build context-aware system prompt
+    const systemPromptWithContext = playgroundContext
+      ? `${JUNIOR_SYSTEM_PROMPT}\n\n${formatPlaygroundContext(playgroundContext)}`
+      : JUNIOR_SYSTEM_PROMPT;
+
     // 7. Generate assistant response using centralized AI provider abstraction
     const aiResult = await generateChatResponse({
       messages: messagesPayload,
+      systemPrompt: systemPromptWithContext,
       signal: req.signal,
     });
 
