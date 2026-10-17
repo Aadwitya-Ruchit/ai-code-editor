@@ -40,6 +40,13 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   
+  // Instance ref to prevent re-initializing terminal when instance loads
+  const webContainerInstanceRef = useRef(webContainerInstance);
+  webContainerInstanceRef.current = webContainerInstance;
+
+  // Buffer writes that arrive before terminal finishes opening
+  const pendingWrites = useRef<string[]>([]);
+  
   // Command line state
   const currentLine = useRef<string>("");
   const cursorPosition = useRef<number>(0);
@@ -110,6 +117,8 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
     writeToTerminal: (data: string) => {
       if (term.current) {
         term.current.write(data);
+      } else {
+        pendingWrites.current.push(data);
       }
     },
     clearTerminal: () => {
@@ -123,7 +132,8 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
   }));
 
   const executeCommand = useCallback(async (command: string) => {
-    if (!webContainerInstance || !term.current) return;
+    const instance = webContainerInstanceRef.current;
+    if (!term.current) return;
 
     // Add to history
     if (command.trim() && commandHistory.current[commandHistory.current.length - 1] !== command) {
@@ -147,19 +157,38 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
         return;
       }
 
+      if (command.trim() === "help") {
+        term.current.writeln("\r\nAvailable commands:");
+        term.current.writeln("  npm install         Install dependencies");
+        term.current.writeln("  npm run start       Start server");
+        term.current.writeln("  npm run dev         Start development server");
+        term.current.writeln("  ls                  List directory contents");
+        term.current.writeln("  node <file>         Run a Node.js script");
+        term.current.writeln("  clear               Clear terminal");
+        term.current.writeln("  history             View command history");
+        writePrompt();
+        return;
+      }
+
       if (command.trim() === "") {
         writePrompt();
         return;
       }
 
+      if (!instance) {
+        term.current.writeln("\r\n⚠️ WebContainer is still initializing. Please wait...");
+        writePrompt();
+        return;
+      }
+
       // Parse command
-      const parts = command.trim().split(' ');
+      const parts = command.trim().split(/\s+/);
       const cmd = parts[0];
       const args = parts.slice(1);
 
       // Execute in WebContainer
       term.current.writeln("");
-      const process = await webContainerInstance.spawn(cmd, args, {
+      const process = await instance.spawn(cmd, args, {
         terminal: {
           cols: term.current.cols,
           rows: term.current.rows,
@@ -316,23 +345,29 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
     terminal.writeln("Type 'help' for available commands");
     writePrompt();
 
+    // Flush any pending writes that arrived before mount
+    if (pendingWrites.current.length > 0) {
+      pendingWrites.current.forEach((text) => terminal.write(text));
+      pendingWrites.current = [];
+    }
+
     return terminal;
   }, [theme, handleTerminalInput, writePrompt]);
 
   const connectToWebContainer = useCallback(async () => {
-    if (!webContainerInstance || !term.current) return;
+    const instance = webContainerInstanceRef.current;
+    if (!instance || !term.current) return;
 
     try {
       setIsConnected(true);
-      term.current.writeln("✅ Connected to WebContainer");
-      term.current.writeln("Ready to execute commands");
+      term.current.writeln("\r\n✅ Connected to WebContainer");
       writePrompt();
     } catch (error) {
       setIsConnected(false);
-      term.current.writeln("❌ Failed to connect to WebContainer");
+      term.current.writeln("\r\n❌ Failed to connect to WebContainer");
       console.error("WebContainer connection error:", error);
     }
-  }, [webContainerInstance, writePrompt]);
+  }, [writePrompt]);
 
   const clearTerminal = useCallback(() => {
     if (term.current) {
@@ -386,12 +421,19 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
   useEffect(() => {
     initializeTerminal();
 
-    // Handle resize
+    // Handle resize safely
     const resizeObserver = new ResizeObserver(() => {
-      if (fitAddon.current) {
-        setTimeout(() => {
-          fitAddon.current?.fit();
-        }, 100);
+      if (
+        fitAddon.current &&
+        terminalRef.current &&
+        terminalRef.current.clientWidth > 0 &&
+        terminalRef.current.clientHeight > 0
+      ) {
+        try {
+          fitAddon.current.fit();
+        } catch (e) {
+          // ignore layout fit edge-cases
+        }
       }
     });
 
@@ -402,10 +444,14 @@ TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
     return () => {
       resizeObserver.disconnect();
       if (currentProcess.current) {
-        currentProcess.current.kill();
+        try {
+          currentProcess.current.kill();
+        } catch (e) {}
       }
       if (shellProcess.current) {
-        shellProcess.current.kill();
+        try {
+          shellProcess.current.kill();
+        } catch (e) {}
       }
       if (term.current) {
         term.current.dispose();

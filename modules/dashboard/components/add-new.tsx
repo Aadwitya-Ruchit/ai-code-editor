@@ -67,6 +67,8 @@ const AddNewButton = () => {
             alt="Create new playground"
             width={150}
             height={150}
+            loading="eager"
+            priority
             style={{ width: "auto", height: "auto" }}
             className="transition-transform duration-300 group-hover:scale-110"
           />

@@ -14,13 +14,13 @@ const nextConfig: NextConfig = {
   async headers() {
     const contentSecurityPolicy = `
       default-src 'self';
-      script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:;
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://stackblitz.com https://*.webcontainer.io https: blob:;
       style-src 'self' 'unsafe-inline' https:;
       img-src 'self' data: blob: https:;
       font-src 'self' data: https:;
       connect-src 'self' https: wss: blob:;
-      worker-src 'self' blob:;
-      frame-src 'self' blob:;
+      worker-src 'self' blob: https://cdn.jsdelivr.net https:;
+      frame-src 'self' blob: https://stackblitz.com https://*.webcontainer.io https://*.webcontainer-api.io https://*.local-corp.webcontainer.io https:;
       frame-ancestors 'self';
       object-src 'none';
       base-uri 'self';
@@ -40,6 +40,10 @@ const nextConfig: NextConfig = {
           {
             key: 'Cross-Origin-Embedder-Policy',
             value: 'require-corp',
+          },
+          {
+            key: 'Cross-Origin-Resource-Policy',
+            value: 'cross-origin',
           },
           // MIME-type sniffing protection
           {

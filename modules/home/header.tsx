@@ -34,11 +34,11 @@ export function Header() {
                     className="flex items-center gap-2 justify-center"
                   >
                     <Image
-                      src={"/logo.svg"}
+                      src="/logo.svg"
                       alt="Logo"
-                      height={60}
-                      width={60}
-                      style={{ width: "auto", height: "auto" }}
+                      width={42}
+                      height={32}
+                      className="h-8 w-auto object-contain"
                     />
 
                     <span className="hidden sm:block font-extrabold text-lg">

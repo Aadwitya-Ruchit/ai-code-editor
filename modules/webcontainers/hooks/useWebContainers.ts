@@ -3,7 +3,7 @@ import { WebContainer } from "@webcontainer/api";
 import { TemplateFolder } from "@/modules/playground/lib/path-to-json";
 
 interface UseWebContainerProps {
-  templateData: TemplateFolder;
+  templateData?: TemplateFolder;
 }
 
 interface UseWebContaierReturn {
@@ -15,51 +15,82 @@ interface UseWebContaierReturn {
   destroy: () => void;
 }
 
+// Module-level singleton to prevent "Only a single WebContainer instance can be booted" error
+let webcontainerInstancePromise: Promise<WebContainer> | null = null;
+let webcontainerInstance: WebContainer | null = null;
+
+export async function getWebContainer(): Promise<WebContainer> {
+  if (webcontainerInstance) {
+    return webcontainerInstance;
+  }
+
+  if (!webcontainerInstancePromise) {
+    webcontainerInstancePromise = WebContainer.boot({ coep: "require-corp" })
+      .then((instance) => {
+        webcontainerInstance = instance;
+        return instance;
+      })
+      .catch((err) => {
+        webcontainerInstancePromise = null;
+        webcontainerInstance = null;
+        throw err;
+      });
+  }
+
+  return webcontainerInstancePromise;
+}
+
 export const useWebContainer = ({
   templateData,
 }: UseWebContainerProps): UseWebContaierReturn => {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(!webcontainerInstance);
   const [error, setError] = useState<string | null>(null);
-  const [instance, setInstance] = useState<WebContainer | null>(null);
+  const [instance, setInstance] = useState<WebContainer | null>(webcontainerInstance);
 
   useEffect(() => {
     let mounted = true;
 
-    async function initializeWebContainer() {
-      try {
-        const webcontainerInstance = await WebContainer.boot();
+    if (webcontainerInstance) {
+      setInstance(webcontainerInstance);
+      setIsLoading(false);
+      return;
+    }
 
+    getWebContainer()
+      .then((webcontainer) => {
         if (!mounted) return;
-
-        setInstance(webcontainerInstance);
+        setInstance(webcontainer);
         setIsLoading(false);
-      } catch (error) {
-        console.error("Failed to initialize WebContainer:", error);
+
+        // Listen for server-ready
+        webcontainer.on("server-ready", (port: number, url: string) => {
+          if (mounted) {
+            setServerUrl(url);
+          }
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to initialize WebContainer:", err);
         if (mounted) {
           setError(
-            error instanceof Error
-              ? error.message
+            err instanceof Error
+              ? err.message
               : "Failed to initialize WebContainer"
           );
           setIsLoading(false);
         }
-      }
-    }
-
-    initializeWebContainer();
+      });
 
     return () => {
       mounted = false;
-      if (instance) {
-        instance.teardown();
-      }
     };
   }, []);
 
   const writeFileSync = useCallback(
     async (path: string, content: string): Promise<void> => {
-      if (!instance) {
+      const activeInstance = instance || webcontainerInstance;
+      if (!activeInstance) {
         throw new Error("WebContainer instance is not available");
       }
 
@@ -68,10 +99,10 @@ export const useWebContainer = ({
         const folderPath = pathParts.slice(0, -1).join("/");
 
         if (folderPath) {
-          await instance.fs.mkdir(folderPath, { recursive: true }); // Create folder structure recursively
+          await activeInstance.fs.mkdir(folderPath, { recursive: true });
         }
 
-        await instance.fs.writeFile(path, content);
+        await activeInstance.fs.writeFile(path, content);
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to write file";
@@ -82,13 +113,15 @@ export const useWebContainer = ({
     [instance]
   );
 
-  const destroy = useCallback(()=>{
-    if(instance){
-        instance.teardown()
-        setInstance(null);
-        setServerUrl(null)
+  const destroy = useCallback(() => {
+    if (webcontainerInstance) {
+      webcontainerInstance.teardown();
+      webcontainerInstance = null;
+      webcontainerInstancePromise = null;
     }
-  },[instance])
+    setInstance(null);
+    setServerUrl(null);
+  }, []);
 
-  return {serverUrl , isLoading , error , instance , writeFileSync , destroy: destroy}
+  return { serverUrl, isLoading, error, instance, writeFileSync, destroy };
 };

@@ -67,11 +67,11 @@ export function DashboardSidebar({ initialPlaygroundData }: { initialPlaygroundD
       <SidebarHeader>
         <div className="flex items-center gap-2 px-4 py-3 justify-center">
           <Image
-            src={"/logo.svg"}
+            src="/logo.svg"
             alt="logo"
-            height={60}
-            width={60}
-            style={{ width: "auto", height: "auto" }}
+            width={48}
+            height={36}
+            className="h-9 w-auto object-contain"
           />
         </div>
        
