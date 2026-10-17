@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback } from "react"
 import Editor, { type Monaco } from "@monaco-editor/react"
 import { TemplateFile } from "../lib/path-to-json"
 import { configureMonaco, defaultEditorOptions, getEditorLanguage } from "../lib/editor-config"
+import { useFileExplorer } from "../hooks/useFileExplorer"
 
 
 interface PlaygroundEditorProps {
@@ -32,6 +33,7 @@ export const PlaygroundEditor = ({
   const editorRef = useRef<any>(null)
   const monacoRef = useRef<Monaco | null>(null)
   const inlineCompletionProviderRef = useRef<any>(null)
+  const selectionListenerRef = useRef<any>(null)
   const currentSuggestionRef = useRef<{
     text: string
     position: { line: number; column: number }
@@ -345,9 +347,10 @@ export const PlaygroundEditor = ({
     })
 
     // CRITICAL: Override Tab key with high priority and prevent default Monaco behavior
-    if (tabCommandRef.current) {
+    if (tabCommandRef.current && typeof tabCommandRef.current.dispose === "function") {
       tabCommandRef.current.dispose()
     }
+    tabCommandRef.current = null
 
     tabCommandRef.current = editor.addCommand(
       monaco.KeyCode.Tab,
@@ -482,6 +485,33 @@ export const PlaygroundEditor = ({
       }
     })
 
+    // Listen for code selection in Monaco to connect with AI assistant
+    if (selectionListenerRef.current) {
+      selectionListenerRef.current.dispose()
+      selectionListenerRef.current = null
+    }
+
+    selectionListenerRef.current = editor.onDidChangeCursorSelection((e: any) => {
+      const selection = e.selection
+      if (!selection || selection.isEmpty()) {
+        useFileExplorer.getState().setSelectedCode(null, null)
+        return
+      }
+      const model = editor.getModel()
+      if (!model) return
+
+      const selectedText = model.getValueInRange(selection)
+      if (!selectedText || !selectedText.trim()) {
+        useFileExplorer.getState().setSelectedCode(null, null)
+        return
+      }
+
+      useFileExplorer.getState().setSelectedCode(selectedText, {
+        startLine: selection.startLineNumber,
+        endLine: selection.endLineNumber,
+      })
+    })
+
     updateEditorLanguage()
   }
 
@@ -500,6 +530,7 @@ export const PlaygroundEditor = ({
 
   useEffect(() => {
     updateEditorLanguage()
+    useFileExplorer.getState().setSelectedCode(null, null)
   }, [activeFile])
 
   // Cleanup on unmount
@@ -512,8 +543,15 @@ export const PlaygroundEditor = ({
         inlineCompletionProviderRef.current.dispose()
         inlineCompletionProviderRef.current = null
       }
+      if (selectionListenerRef.current) {
+        selectionListenerRef.current.dispose()
+        selectionListenerRef.current = null
+      }
+      useFileExplorer.getState().setSelectedCode(null, null)
       if (tabCommandRef.current) {
-        tabCommandRef.current.dispose()
+        if (typeof tabCommandRef.current.dispose === "function") {
+          tabCommandRef.current.dispose()
+        }
         tabCommandRef.current = null
       }
     }
