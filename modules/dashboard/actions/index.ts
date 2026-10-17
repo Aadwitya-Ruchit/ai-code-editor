@@ -289,3 +289,124 @@ export const toggleStarMarked = async (
     return { success: false, error: "Failed to update star mark status." };
   }
 };
+
+/**
+ * Validates a GitHub URL and fetches repository metadata for preview before importing.
+ */
+export const getGithubRepoPreview = async (rawUrl: string) => {
+  const user = await currentUser();
+  if (!user?.id) {
+    return { success: false, error: "Unauthorized. Please sign in to import a repository." };
+  }
+
+  try {
+    const { parseGithubUrl, fetchGithubMetadata } = await import("./github-importer");
+    const { owner, repo, branch } = parseGithubUrl(rawUrl);
+
+    // Check if user has linked GitHub account for authenticated API calls
+    const githubAccount = await db.account.findFirst({
+      where: {
+        userId: user.id,
+        provider: "github",
+      },
+    });
+
+    const token = githubAccount?.access_token || undefined;
+    const metadata = await fetchGithubMetadata(owner, repo, token);
+
+    return {
+      success: true,
+      metadata: {
+        ...metadata,
+        requestedBranch: branch || metadata.defaultBranch,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to retrieve repository details.";
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * Downloads a GitHub repository, parses its files into a TemplateFolder,
+ * and saves it as a new Playground with TemplateFile in MongoDB.
+ */
+export const importGithubRepo = async (data: {
+  url: string;
+  branch?: string;
+  customTitle?: string;
+}) => {
+  const user = await currentUser();
+  if (!user?.id) {
+    throw new Error("Unauthorized. Please sign in to import a repository.");
+  }
+
+  try {
+    const { parseGithubUrl, fetchGithubMetadata, downloadAndExtractGithubRepo } = await import(
+      "./github-importer"
+    );
+
+    const { owner, repo, branch: urlBranch } = parseGithubUrl(data.url);
+
+    // Look for user's linked GitHub account access token
+    const githubAccount = await db.account.findFirst({
+      where: {
+        userId: user.id,
+        provider: "github",
+      },
+    });
+
+    const token = githubAccount?.access_token || undefined;
+
+    // Retrieve metadata for title, description, and default branch
+    const metadata = await fetchGithubMetadata(owner, repo, token);
+    const targetBranch = data.branch?.trim() || urlBranch || metadata.defaultBranch;
+
+    // Download archive, extract, and convert to TemplateFolder
+    const { templateData, detectedTemplate, fileCount, totalSizeBytes } =
+      await downloadAndExtractGithubRepo(owner, repo, targetBranch, token);
+
+    const rawTitle = data.customTitle?.trim() || metadata.name || repo;
+    const title = rawTitle.slice(0, 100);
+    const description = (
+      metadata.description || `Imported from https://github.com/${owner}/${repo} (branch: ${targetBranch})`
+    ).slice(0, 500);
+
+    // Persist new Playground
+    const playground = await db.playground.create({
+      data: {
+        title,
+        description,
+        template: detectedTemplate,
+        userId: user.id,
+      },
+    });
+
+    // Persist extracted file tree
+    await db.templateFile.create({
+      data: {
+        playgroundId: playground.id,
+        content: JSON.stringify(templateData),
+      },
+    });
+
+    logSecurityEvent("PROJECT_MODIFIED", {
+      userId: user.id,
+      targetId: playground.id,
+      endpoint: "importGithubRepo",
+      reason: `Imported repository ${owner}/${repo}@${targetBranch} (${fileCount} files, ${totalSizeBytes} bytes)`,
+    });
+
+    revalidatePath("/dashboard");
+    return {
+      success: true,
+      playgroundId: playground.id,
+      fileCount,
+      template: detectedTemplate,
+    };
+  } catch (error) {
+    console.error("Error importing GitHub repository:", error);
+    const message = error instanceof Error ? error.message : "Failed to import GitHub repository.";
+    throw new Error(message);
+  }
+};
