@@ -25,6 +25,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   AlertCircle,
+  FileText,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -44,6 +46,25 @@ import {
 import { toast } from "sonner";
 import "katex/dist/katex.min.css";
 import Image from "next/image";
+import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
+import { findFilePath } from "@/modules/playground/lib";
+import { TemplateFolder } from "@/modules/playground/lib/path-to-json";
+
+function extractAllFilePaths(folder: TemplateFolder | null, currentPath = ""): string[] {
+  if (!folder || !folder.items) return [];
+  const paths: string[] = [];
+  for (const item of folder.items) {
+    if ("folderName" in item) {
+      const subPath = currentPath ? `${currentPath}/${item.folderName}` : item.folderName;
+      paths.push(...extractAllFilePaths(item as TemplateFolder, subPath));
+    } else {
+      const fileName = item.fileExtension ? `${item.filename}.${item.fileExtension}` : item.filename;
+      const fullPath = currentPath ? `${currentPath}/${fileName}` : fileName;
+      paths.push(fullPath);
+    }
+  }
+  return paths;
+}
 
 export interface ChatMessage {
   id: string;
@@ -129,6 +150,21 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
   isOpen,
   onClose,
 }) => {
+  // Playground state from useFileExplorer store
+  const {
+    playgroundId,
+    playgroundTitle,
+    playgroundTemplate,
+    templateData,
+    openFiles,
+    activeFileId,
+    selectedCode,
+    selectedRange,
+  } = useFileExplorer();
+
+  const activeFile = openFiles.find((f) => f.id === activeFileId);
+  const [attachContext, setAttachContext] = useState<boolean>(true);
+
   // Conversations and Messages state
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -289,36 +325,72 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
   };
 
   // Handle sending a message
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (
+    e?: React.FormEvent,
+    overridePrompt?: string,
+    overrideMode?: "chat" | "review" | "fix" | "optimize"
+  ) => {
     if (e) e.preventDefault();
-    const trimmedInput = input.trim();
-    if (!trimmedInput || isSending) return;
+    const effectiveInput = (overridePrompt ?? input).trim();
+    if (!effectiveInput || isSending) return;
 
+    const currentMode = overrideMode || chatMode;
     setErrorMessage(null);
 
     const messageType =
-      chatMode === "chat"
+      currentMode === "chat"
         ? "chat"
-        : chatMode === "review"
+        : currentMode === "review"
         ? "code_review"
-        : chatMode === "fix"
+        : currentMode === "fix"
         ? "error_fix"
         : "optimization";
 
     const optimisticUserMessage: ChatMessage = {
       id: `temp-${Date.now()}`,
       role: "user",
-      content: trimmedInput,
+      content: effectiveInput,
       createdAt: new Date(),
       type: messageType,
     };
 
     setMessages((prev) => [...prev, optimisticUserMessage]);
-    setInput("");
+    if (!overridePrompt) {
+      setInput("");
+    }
     setIsSending(true);
 
     try {
-      const contextualMessage = getChatModePrompt(chatMode, trimmedInput);
+      const contextualMessage = getChatModePrompt(currentMode, effectiveInput);
+
+      // Assemble playground context if connected and enabled
+      let playgroundContextPayload: any = undefined;
+      if (attachContext && (playgroundId || activeFile || templateData)) {
+        const fileTree = templateData ? extractAllFilePaths(templateData) : [];
+        const activeFilePath =
+          activeFile && templateData
+            ? findFilePath(activeFile, templateData) || `${activeFile.filename}.${activeFile.fileExtension}`
+            : activeFile
+            ? `${activeFile.filename}.${activeFile.fileExtension}`
+            : undefined;
+
+        playgroundContextPayload = {
+          playgroundId: playgroundId || undefined,
+          playgroundTitle: playgroundTitle || undefined,
+          template: playgroundTemplate || undefined,
+          fileTree: fileTree.length > 0 ? fileTree : undefined,
+          activeFile: activeFile
+            ? {
+                filename: activeFile.filename,
+                fileExtension: activeFile.fileExtension || "",
+                path: activeFilePath,
+                content: activeFile.content,
+                selectedCode: selectedCode || undefined,
+                selectedRange: selectedRange || undefined,
+              }
+            : undefined,
+        };
+      }
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -328,7 +400,8 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
         body: JSON.stringify({
           conversationId: activeConversationId || undefined,
           message: contextualMessage,
-          mode: chatMode,
+          mode: currentMode,
+          playgroundContext: playgroundContextPayload,
         }),
       });
 
@@ -434,6 +507,61 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
       if (textareaRef.current) {
         textareaRef.current.focus();
       }
+    }
+  };
+
+  const triggerQuickAction = (
+    action: "explain_selection" | "fix_selection" | "explain_file" | "review_file" | "explain_project"
+  ) => {
+    if (!attachContext) setAttachContext(true);
+
+    switch (action) {
+      case "explain_selection":
+        if (selectedCode) {
+          const linesDesc = selectedRange
+            ? ` (lines ${selectedRange.startLine}-${selectedRange.endLine})`
+            : "";
+          handleSendMessage(
+            undefined,
+            `Can you explain the selected code${linesDesc} in detail? What does it do, how does it work, and are there any edge cases?`,
+            "chat"
+          );
+        }
+        break;
+      case "fix_selection":
+        if (selectedCode) {
+          handleSendMessage(
+            undefined,
+            `Please analyze this selected code for bugs, errors, potential crashes, or anti-patterns, and provide an optimized fix.`,
+            "fix"
+          );
+        }
+        break;
+      case "explain_file":
+        if (activeFile) {
+          handleSendMessage(
+            undefined,
+            `Can you explain what the file '${activeFile.filename}.${activeFile.fileExtension}' does, how it fits into the project architecture, and its main components/functions?`,
+            "chat"
+          );
+        }
+        break;
+      case "review_file":
+        if (activeFile) {
+          handleSendMessage(
+            undefined,
+            `Please review '${activeFile.filename}.${activeFile.fileExtension}' for code quality, performance optimizations, security, and best practices.`,
+            "review"
+          );
+        }
+        break;
+      case "explain_project":
+        handleSendMessage(
+          undefined,
+          `Based on the project structure and framework (${playgroundTemplate || "project"}), can you explain the overall architecture and how different files connect?`,
+          "chat"
+        );
+        break;
     }
   };
 
@@ -622,9 +750,9 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
                     <Image
                       src="/logo.svg"
                       alt="Logo"
-                      width={22}
-                      height={22}
-                      style={{ width: "auto", height: "auto" }}
+                      width={24}
+                      height={18}
+                      className="h-5 w-auto object-contain"
                     />
                   </div>
 
@@ -755,6 +883,48 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
                   </DropdownMenu>
                 </div>
               </div>
+
+              {/* Connected Playground Context Banner */}
+              {playgroundId && (
+                <div className="mx-6 mb-3 p-2 rounded-lg border border-zinc-800/80 bg-zinc-950/60 flex items-center justify-between text-xs text-zinc-300">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="font-medium text-zinc-200 truncate max-w-[130px]" title={playgroundTitle || "Playground"}>
+                      {playgroundTitle || "Playground"}
+                    </span>
+                    {playgroundTemplate && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400 font-mono shrink-0">
+                        {playgroundTemplate}
+                      </span>
+                    )}
+                    {activeFile && (
+                      <span className="hidden sm:inline-flex items-center gap-1 text-zinc-400 truncate max-w-[140px]" title={`${activeFile.filename}.${activeFile.fileExtension}`}>
+                        <FileText className="h-3 w-3 text-blue-400 shrink-0" />
+                        <span className="truncate">{activeFile.filename}.{activeFile.fileExtension}</span>
+                      </span>
+                    )}
+                    {selectedCode && selectedRange && (
+                      <span className="hidden md:inline-flex items-center gap-1 text-amber-300 text-[11px] bg-amber-950/50 border border-amber-800/60 px-1.5 py-0.5 rounded shrink-0">
+                        Lines {selectedRange.startLine}–{selectedRange.endLine}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-zinc-400 select-none hover:text-zinc-200">
+                      <input
+                        type="checkbox"
+                        checked={attachContext}
+                        onChange={(e) => setAttachContext(e.target.checked)}
+                        className="rounded border-zinc-700 bg-zinc-900 text-blue-600 h-3.5 w-3.5 focus:ring-0 cursor-pointer"
+                      />
+                      <span>Sync code</span>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Error Notification Banner */}
@@ -958,6 +1128,59 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
               onSubmit={handleSendMessage}
               className="shrink-0 p-4 border-t border-zinc-800 bg-zinc-900/80 backdrop-blur-sm"
             >
+              {/* Quick Action Suggestion Pills */}
+              {playgroundId && attachContext && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-2.5 mb-1.5 scrollbar-none text-[11px]">
+                  {selectedCode ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => triggerQuickAction("explain_selection")}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-800/90 hover:bg-zinc-700 border border-amber-500/40 text-amber-300 shrink-0 transition"
+                      >
+                        <Sparkles className="h-3 w-3 text-amber-400" />
+                        Explain Selection (L{selectedRange?.startLine}–{selectedRange?.endLine})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => triggerQuickAction("fix_selection")}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-800/90 hover:bg-zinc-700 border border-red-500/40 text-red-300 shrink-0 transition"
+                      >
+                        <RefreshCw className="h-3 w-3 text-red-400" />
+                        Fix Selection
+                      </button>
+                    </>
+                  ) : activeFile ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => triggerQuickAction("explain_file")}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-800/90 hover:bg-zinc-700 border border-purple-500/40 text-purple-300 shrink-0 transition"
+                      >
+                        <Sparkles className="h-3 w-3 text-purple-400" />
+                        Explain {activeFile.filename}.{activeFile.fileExtension}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => triggerQuickAction("review_file")}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-800/90 hover:bg-zinc-700 border border-blue-500/40 text-blue-300 shrink-0 transition"
+                      >
+                        <Code className="h-3 w-3 text-blue-400" />
+                        Review Code
+                      </button>
+                    </>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => triggerQuickAction("explain_project")}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-800/90 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 shrink-0 transition"
+                  >
+                    <FolderOpen className="h-3 w-3 text-emerald-400" />
+                    Explain Project Architecture
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-end gap-3">
                 <div className="flex-1 relative">
                   <Textarea

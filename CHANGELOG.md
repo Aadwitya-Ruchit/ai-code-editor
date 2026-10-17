@@ -2,6 +2,50 @@
 
 All notable changes to the AI Code Editor persistent chat and configurable model architecture will be documented in this file.
 
+## [2026-10-17] - Playground-Aware AI Assistant & Codebase Context Synchronization
+
+### New Features & Architecture Enhancements
+1. **Playground & AI Chat Context Synchronization**:
+   - Connected the AI assistant (`AIChatSidePanel`) directly with the active Playground workspace.
+   - The assistant now dynamically recognizes:
+     - The active project title and framework environment (`REACT`, `NEXTJS`, `EXPRESS`, `VUE`, `HONO`, `ANGULAR`).
+     - The complete project directory structure and file paths.
+     - The currently active open file (`filename`, `fileExtension`, full path, and content).
+     - Active code selections made in the Monaco Editor with exact start/end line numbers.
+
+2. **Zustand State Bridging** (`modules/playground/hooks/useFileExplorer.tsx`):
+   - Extended `useFileExplorer` store to hold `playgroundTitle`, `playgroundTemplate`, `selectedCode`, and `selectedRange`.
+   - Exposed reactive actions `setPlaygroundMetadata` and `setSelectedCode`.
+   - Integrated `setPlaygroundMetadata` into `app/playground/[id]/page.tsx` on playground load.
+
+3. **Monaco Editor Real-Time Selection Tracking** (`modules/playground/components/playground-editor.tsx`):
+   - Added `onDidChangeCursorSelection` listener to Monaco editor instance.
+   - Dynamically pushes highlighted text and line number boundaries (`startLineNumber`, `endLineNumber`) to the shared store.
+   - Automatically clears selection state on cursor collapse, active file switch, or editor unmount.
+
+4. **Context-Aware Backend Assembly & Token Safety** (`app/api/chat/route.ts`):
+   - Extended `POST /api/chat` payload schema to accept optional `playgroundContext`.
+   - Built `formatPlaygroundContext()` generating safe `<playground_context>` structured delimiters.
+   - Enforced strict token economy and payload truncation guardrails:
+     - Project file tree capped to the top 100 paths.
+     - Active file content capped to $35{,}000$ characters.
+     - Selected code snippets capped to $20{,}000$ characters.
+   - Injected `<playground_context>` into the system prompt passed to `generateChatResponse()`, preserving clean database records without polluting saved user chat history.
+   - Automatically prefixes new conversation titles with `[ProjectName]` for instant recognition in chat history.
+
+5. **AI Chat Panel UI & Quick Action Shortcuts** (`modules/ai-chat/components/ai-chat-sidebarpanel.tsx`):
+   - **Connected Context Status Banner**: Added live status bar showing current project name, framework badge, active file, and selected line numbers with a one-click "Sync code" toggle.
+   - **One-Click Quick Action Pills**:
+     - 💡 *Explain Selection* (when code is highlighted in Monaco)
+     - 🐞 *Fix Selection* (targeted debugging of selected lines)
+     - ✨ *Explain Active File* (explains file architecture and responsibilities)
+     - 🔍 *Review Code* (evaluates file against best practices and performance standards)
+     - 📁 *Explain Project Architecture* (summarizes how project files and dependencies interconnect)
+
+6. **Automated Verification**:
+   - Added unit test suite `tests/playground-chat-context.test.ts` verifying delimiter tagging, metadata extraction, selection isolation, and oversized content truncation.
+   - Passed all 26 existing security regression test suites (IDOR isolation, rate limiting, and HTTP security headers).
+
 ## [2026-10-15] - Runtime Sidebar Context Fix & Next.js Image Optimization
 
 ### Bug Fixes & Improvements
